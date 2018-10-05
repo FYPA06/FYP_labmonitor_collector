@@ -1,0 +1,484 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API to collect lab data.
+
+  '
+Globals:
+  Function:
+    Environment:
+      Variables:
+        BlackListProcess: iexplore.exe,MicrosoftEdgeCP.exe
+        GitCommand:
+          Ref: GitCommand
+        RunUnitTest:
+          Ref: RunUnitTest
+        SourceRespositoryName:
+          Ref: SourceRespositoryName
+        StudentLabDataBucket:
+          Ref: StudentLabDataBucket
+        StudentMarkingBucket:
+          Ref: StudentMarkingBucket
+    MemorySize: 512
+    Runtime: python3.6
+    Timeout: 180
+Outputs:
+  ApiKey:
+    Value:
+      Ref: ApiKey
+  LabCodeCollectorApi:
+    Description: API Gateway endpoint URL for Prod stage for LabCodeCollectorFunction
+      function
+    Value:
+      Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/code/
+  LabCollectorApi:
+    Description: API Gateway endpoint URL for Prod stage
+    Value:
+      Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/
+  LabEventCollectorApi:
+    Description: API Gateway endpoint URL for Prod stage for LabEventCollectorFunction
+      function
+    Value:
+      Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/event/
+  S3BucketSecureURL:
+    Description: Name of S3 bucket to hold website content
+    Value:
+      Fn::Join:
+      - ''
+      - - https://
+        - Fn::GetAtt:
+          - StudentMarkingBucket
+          - DomainName
+  StudentLabDataBucket:
+    Value:
+      Ref: StudentLabDataBucket
+  StudentPlan:
+    Value:
+      Ref: StudentPlan
+  WebsiteURL:
+    Description: URL for website hosted on S3
+    Value:
+      Fn::GetAtt:
+      - StudentMarkingBucket
+      - WebsiteURL
+Parameters:
+  BlackListProcess:
+    Default: ''
+    Description: Black List Process.
+    Type: CommaDelimitedList
+  GitCommand:
+    Description: Git commands to clone the test code respository.
+    Type: String
+  RunUnitTest:
+    AllowedValues:
+    - true
+    - false
+    Default: true
+    Description: Run pytest unittest or not.
+    Type: String
+  SourceRespositoryName:
+    Description: Git test source code respository name.
+    Type: String
+Resources:
+  ApiGatewayApi:
+    Properties:
+      DefinitionBody:
+        info:
+          title:
+            Ref: AWS::StackName
+        paths:
+          /code:
+            post:
+              responses: {}
+              security:
+              - api_key: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                passthroughBehavior: when_no_match
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabCodeCollectorFunction.Arn}/invocations
+          /event:
+            post:
+              responses: {}
+              security:
+              - api_key: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabEventCollectorFunction.Arn}/invocations
+          /process:
+            post:
+              responses: {}
+              security:
+              - api_key: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabScreenshotCollectorFunction.Arn}/invocations
+          /progress/{studentId}/{lab}:
+            get:
+              parameters:
+              - description: Student ID
+                in: path
+                name: studentId
+                required: true
+                schema:
+                  type: integer
+              - description: lab number
+                in: path
+                name: lab
+                required: true
+                schema:
+                  type: integer
+              responses: {}
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CheckProgessFunction.Arn}/invocations
+        securityDefinitions:
+          api_key:
+            in: header
+            name: x-api-key
+            type: apiKey
+        swagger: 2.0
+        x-amazon-apigateway-api-key-source: HEADER
+      StageName: Prod
+    Type: AWS::Serverless::Api
+  ApiKey:
+    DependsOn:
+    - ApiGatewayApiProdStage
+    Properties:
+      Description: '000000000'
+      Enabled: 'true'
+      Name: '000000000'
+      StageKeys:
+      - RestApiId:
+          Ref: ApiGatewayApi
+        StageName: Prod
+    Type: AWS::ApiGateway::ApiKey
+  AthenaNamedQueryStudentKeyboardStream:
+    DependsOn: TableEvents
+    Properties:
+      Database:
+        Ref: DatabaseEvents
+      Description: Student keyboard streams.
+      Name: StudentKeyboardStream
+      QueryString: 'SELECT distinct(id), array_agg(key) FROM "studentevents"."event_stream"
+        WHERE name=''KeyPressEvent'' GROUP BY id;
+
+        '
+    Type: AWS::Athena::NamedQuery
+  CheckProgessFunction:
+    Properties:
+      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      Events:
+        LambdaMicroservice:
+          Properties:
+            Method: GET
+            Path: /progress/{studentId}/{lab}
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      Handler: check_progress.lambda_handler
+      Policies:
+      - Statement:
+        - Action:
+          - apigateway:GET
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:apigateway:${AWS::Region}::/apikeys/*
+        - Action:
+          - s3:GetObject
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        - Action:
+          - s3:ListObjects
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
+  CheckProgessFunctionPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - LabProcessCollectorFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
+    Type: AWS::Lambda::Permission
+  DatabaseEvents:
+    Properties:
+      CatalogId:
+        Ref: AWS::AccountId
+      DatabaseInput:
+        Description: Student Event Stream
+        Name: studentevents
+    Type: AWS::Glue::Database
+  LabCodeCollectorFunction:
+    Properties:
+      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      Events:
+        LambdaMicroservice:
+          Properties:
+            Method: POST
+            Path: /code
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      Handler: collect_code_function.lambda_handler
+      Policies:
+      - Statement:
+        - Action:
+          - apigateway:GET
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:apigateway:${AWS::Region}::/apikeys/*
+        - Action:
+          - s3:PutObject
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        - Action:
+          - s3:PutObjectAcl
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
+  LabCodeCollectorFunctionPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - LabCodeCollectorFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
+    Type: AWS::Lambda::Permission
+  LabEventCollectorFunction:
+    Properties:
+      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      Events:
+        LambdaMicroservice:
+          Properties:
+            Method: POST
+            Path: /event
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      Handler: collect_event_function.lambda_handler
+      Policies:
+      - Statement:
+        - Action:
+          - apigateway:GET
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:apigateway:${AWS::Region}::/apikeys/*
+        - Action:
+          - s3:PutObject
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
+  LabEventCollectorPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - LabEventCollectorFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
+    Type: AWS::Lambda::Permission
+  LabProcessCollectorFunction:
+    Properties:
+      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      Events:
+        LambdaMicroservice:
+          Properties:
+            Method: POST
+            Path: /process
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      Handler: collect_process_function.lambda_handler
+      Policies:
+      - Statement:
+        - Action:
+          - apigateway:GET
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:apigateway:${AWS::Region}::/apikeys/*
+        - Action:
+          - s3:PutObject
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        - Action:
+          - s3:PutObjectAcl
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
+  LabProcessCollectorPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - LabProcessCollectorFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
+    Type: AWS::Lambda::Permission
+  LabScreenshotCollectorFunction:
+    Properties:
+      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      Events:
+        LambdaMicroservice:
+          Properties:
+            Method: POST
+            Path: /process
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      Handler: collect_screenshot_function.lambda_handler
+      Policies:
+      - Statement:
+        - Action:
+          - apigateway:GET
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:apigateway:${AWS::Region}::/apikeys/*
+        - Action:
+          - s3:PutObject
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        - Action:
+          - s3:PutObjectAcl
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
+  LabScreenshotCollectorPermission:
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - LabScreenshotCollectorFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
+    Type: AWS::Lambda::Permission
+  StudentLabDataBucket:
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+    Type: AWS::S3::Bucket
+  StudentMarkingBucket:
+    Properties:
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        ErrorDocument: error.html
+        IndexDocument: index.html
+    Type: AWS::S3::Bucket
+  StudentPlan:
+    DependsOn:
+    - ApiGatewayApiProdStage
+    Properties:
+      ApiStages:
+      - ApiId:
+          Ref: ApiGatewayApi
+        Stage: Prod
+      Description: Student Plan 50000 requests per day
+      Quota:
+        Limit: 50000
+        Period: DAY
+      Throttle:
+        BurstLimit: 20
+        RateLimit: 10
+      UsagePlanName: STUDENT
+    Type: AWS::ApiGateway::UsagePlan
+  TableEvents:
+    DependsOn: DatabaseEvents
+    Properties:
+      CatalogId:
+        Ref: AWS::AccountId
+      DatabaseName:
+        Ref: DatabaseEvents
+      TableInput:
+        Description: Event from students.
+        Name: event_stream
+        Parameters:
+          classification: json
+        PartitionKeys:
+        - Name: year
+          Type: int
+        - Name: month
+          Type: int
+        - Name: day
+          Type: int
+        - Name: hour
+          Type: int
+        - Name: id
+          Type: string
+        StorageDescriptor:
+          Columns:
+          - Name: x
+            Type: int
+          - Name: y
+            Type: int
+          - Name: dx
+            Type: int
+          - Name: dy
+            Type: int
+          - Name: time
+            Type: timestamp
+          - Name: button
+            Type: string
+          - Name: pressed
+            Type: string
+          - Name: key
+            Type: string
+          - Name: name
+            Type: string
+          - Name: ip
+            Type: string
+          - Name: student
+            Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location:
+            Fn::Sub: s3://${StudentLabDataBucket}/event_stream
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            Parameters:
+              paths: button,dx,dy,ip,key,name,pressed,student,time,x,y
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+        TableType: EXTERNAL_TABLE
+    Type: AWS::Glue::Table
+  UsagePlanKey:
+    Properties:
+      KeyId:
+        Ref: ApiKey
+      KeyType: API_KEY
+      UsagePlanId:
+        Ref: StudentPlan
+    Type: AWS::ApiGateway::UsagePlanKey
+Transform: AWS::Serverless-2016-10-31
