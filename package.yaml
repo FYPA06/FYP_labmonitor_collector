@@ -38,6 +38,11 @@ Outputs:
       function
     Value:
       Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/event/
+  LabScreenshotCollectorApi:
+    Description: API Gateway endpoint URL for Prod stage for LabScreenshotCollectorFunction
+      function
+    Value:
+      Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/screenshot/
   S3BucketSecureURL:
     Description: Name of S3 bucket to hold website content
     Value:
@@ -115,7 +120,7 @@ Resources:
                 httpMethod: POST
                 type: aws_proxy
                 uri:
-                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabScreenshotCollectorFunction.Arn}/invocations
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabProcessCollectorFunction.Arn}/invocations
           /progress/{studentId}/{lab}:
             get:
               parameters:
@@ -137,6 +142,16 @@ Resources:
                 type: aws_proxy
                 uri:
                   Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CheckProgessFunction.Arn}/invocations
+          /screenshot:
+            post:
+              responses: {}
+              security:
+              - api_key: []
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabScreenshotCollectorFunction.Arn}/invocations
         securityDefinitions:
           api_key:
             in: header
@@ -165,14 +180,14 @@ Resources:
         Ref: DatabaseEvents
       Description: Student keyboard streams.
       Name: StudentKeyboardStream
-      QueryString: 'SELECT distinct(id), array_agg(key) FROM "studentevents"."event_stream"
-        WHERE name=''KeyPressEvent'' GROUP BY id;
+      QueryString: 'SELECT distinct(id), array_agg(key)  FROM "studentevents"."event_stream"  WHERE
+        name=''KeyPressEvent''  GROUP BY id;
 
         '
     Type: AWS::Athena::NamedQuery
   CheckProgessFunction:
     Properties:
-      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
       Events:
         LambdaMicroservice:
           Properties:
@@ -222,7 +237,7 @@ Resources:
     Type: AWS::Glue::Database
   LabCodeCollectorFunction:
     Properties:
-      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
       Events:
         LambdaMicroservice:
           Properties:
@@ -265,7 +280,7 @@ Resources:
     Type: AWS::Lambda::Permission
   LabEventCollectorFunction:
     Properties:
-      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
       Events:
         LambdaMicroservice:
           Properties:
@@ -303,7 +318,7 @@ Resources:
     Type: AWS::Lambda::Permission
   LabProcessCollectorFunction:
     Properties:
-      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
       Events:
         LambdaMicroservice:
           Properties:
@@ -346,12 +361,12 @@ Resources:
     Type: AWS::Lambda::Permission
   LabScreenshotCollectorFunction:
     Properties:
-      CodeUri: s3://labcollectorsourcebucket121/51257820a923d01fd76a1be0129aaf88
+      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
       Events:
         LambdaMicroservice:
           Properties:
             Method: POST
-            Path: /process
+            Path: /screenshot
             RestApiId:
               Ref: ApiGatewayApi
           Type: Api
@@ -370,10 +385,9 @@ Resources:
           - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
           - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
         - Action:
-          - s3:PutObjectAcl
+          - s3:*
           Effect: Allow
-          Resource:
-          - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+          Resource: '*'
         Version: '2012-10-17'
     Type: AWS::Serverless::Function
   LabScreenshotCollectorPermission:
@@ -389,6 +403,13 @@ Resources:
     Type: AWS::Lambda::Permission
   StudentLabDataBucket:
     Properties:
+      CorsConfiguration:
+        CorsRules:
+        - AllowedMethods:
+          - POST
+          - PUT
+          AllowedOrigins:
+          - '*'
       VersioningConfiguration:
         Status: Enabled
     Type: AWS::S3::Bucket
