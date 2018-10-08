@@ -222,6 +222,10 @@ Resources:
             - s3:PutObjectAcl
             Resource:
             - Fn::Sub: 'arn:aws:s3:::${StudentMarkingBucket}/*'
+
+          - Effect: Allow
+            Action: s3:*
+            Resource: "*"
         Events:
           LambdaMicroservice:
             Type: Api
@@ -267,6 +271,13 @@ Resources:
         Properties:
           VersioningConfiguration:
             Status: Enabled
+          CorsConfiguration:
+            CorsRules:
+              - AllowedMethods:
+                  - POST
+                  - PUT
+                AllowedOrigins:
+                  - "*"
 
     StudentMarkingBucket:
         Type: AWS::S3::Bucket
@@ -312,6 +323,7 @@ Resources:
           Principal: apigateway.amazonaws.com
           SourceArn:
             'Fn::Sub': 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*'
+            
     LabScreenshotCollectorPermission:
       Type: 'AWS::Lambda::Permission'
       Properties:
