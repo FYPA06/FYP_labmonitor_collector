@@ -26,15 +26,25 @@ def lambda_handler(event, context):
     now = datetime.datetime.now()
     partition = now.strftime("year=%Y/month=%m/day=%d/hour=%H")
     filename = now.strftime("Screenshot_%M_%S.jpg")
-   
-    presigned_url = s3.generate_presigned_url(
-        ClientMethod='put_object',
-        Params={
-            'Bucket': os.environ['StudentLabDataBucket'],
-            'Key':f"screenshot/{partition}/id={apiKey['name']}/{filename}"
-        }
-    )
+    
+    Bucket= os.environ['StudentLabDataBucket']
+    Key=f"screenshot/{partition}/id={apiKey['name']}/{filename}"
+    fields = {"acl": "public-read"}
+
+
+    conditions = [
+        {"acl": "public-read"}
+        
+        ]
+
+
+    post = s3.generate_presigned_post(
+        Bucket=Bucket,
+        Key=Key,
+        Fields=fields,
+        Conditions=conditions
+        )
 
     # Return the presigned URL
-    return respond(None, presigned_url)
+    return respond(None, post)
     
