@@ -7,6 +7,7 @@ import datetime
 print('Loading function')
 s3 = boto3.client('s3')
 apigateway = boto3.client('apigateway')
+kinesis = boto3.client('kinesis')
 
 
 def respond(err, res=None):
@@ -34,10 +35,32 @@ def lambda_handler(event, context):
     
     events = json.loads(event["body"])
     body = []
+    Keyboad=[]
+    Mouse=[]
+    count=0
     for student_event in events:
         student_event["ip"] = event["requestContext"]["identity"]["sourceIp"]
         student_event["student"] = apiKey["description"]
         body.append(json.dumps(student_event) )
+        if ((student_event["name"] == "KeyPressEvent") or (student_event["name"] == "KeyReleaseEvent")): 
+            del(student_event['time'],student_event['ip'],student_event['student'])
+            Keyboad.append(student_event)
+            count+=1
+
+        else:
+            Mouse.append(student_event)
+            count+=1
+        if count==500:
+            putdatatokinesis(Mouse,"MouseEventStream",apiKey['name'])
+            putdatatokinesis(Keyboad,"KeybroadEventStream",apiKey['name'])
+          
+            Mouse=[]
+            keyboad=[]
+            count=0
+            
+
+            
+       
         
     s3.put_object(Bucket=os.environ['StudentLabDataBucket'], 
             Key = f"event_stream/{partition}/id={apiKey['name']}/{filename}",
@@ -46,3 +69,13 @@ def lambda_handler(event, context):
           )
    
     return respond(None, apiKey["name"] + f" saved {len(events)} events.")
+def putdatatokinesis(RecordKinesis,StreamNames,key):
+        Record=[
+        {
+            'Data': b'RecordKinesis',
+            'PartitionKey': key
+        },
+        ]
+        
+        response = kinesis.put_records(Records=Record, StreamName=StreamNames)
+        return response    
