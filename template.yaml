@@ -30,6 +30,8 @@ Globals:
         Variables: 
           StudentLabDataBucket: !Ref StudentLabDataBucket
           StudentMarkingBucket: !Ref StudentMarkingBucket
+          MouseEventStream: !Ref MouseEventStream
+          KeybroadEventStream: !Ref KeybroadEventStream
           SourceRespositoryName: !Ref SourceRespositoryName
           GitCommand: !Ref GitCommand
           RunUnitTest: !Ref RunUnitTest
@@ -134,7 +136,14 @@ Resources:
                       - s3:PutObject
                     Resource:
                         - Fn::Sub: 'arn:aws:s3:::${StudentLabDataBucket}/*'
-                        - Fn::Sub: 'arn:aws:s3:::${StudentMarkingBucket}/*'   
+                        - Fn::Sub: 'arn:aws:s3:::${StudentMarkingBucket}/*' 
+                  - Effect: Allow
+                    Action:
+                      - kinesis:PutRecord
+                    Resource:
+                        - Fn::Sub: 'arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KeybroadEventStream}'
+                        - Fn::Sub: 'arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${MouseEventStream}'
+
             Events:
                 LambdaMicroservice:
                   Type: Api
@@ -274,7 +283,21 @@ Resources:
                     RestApiId: !Ref ApiGatewayApi
                     Path: /progress/{studentId}/{lab}
                     Method: GET
-                    
+    
+    MouseEventStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: MouseEventStream
+        RetentionPeriodHours: 24
+        ShardCount: 1
+    
+    KeybroadEventStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: KeybroadEventStream
+        RetentionPeriodHours: 24
+        ShardCount: 1        
+        
     StudentLabDataBucket:
         Type: AWS::S3::Bucket
         Properties:
@@ -497,6 +520,12 @@ Outputs:
        
     StudentLabDataBucket:
       Value: !Ref StudentLabDataBucket 
+      
+    MouseEventStream:
+      Value: !Ref MouseEventStream
+      
+    KeybroadEventStream:
+      Value: !Ref KeybroadEventStream
       
     ApiKey:
       Value: !Ref ApiKey
