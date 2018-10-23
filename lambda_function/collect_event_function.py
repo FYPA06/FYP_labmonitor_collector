@@ -42,8 +42,8 @@ def lambda_handler(event, context):
         student_event["ip"] = event["requestContext"]["identity"]["sourceIp"]
         student_event["student"] = apiKey["description"]
         body.append(json.dumps(student_event) )
-        if ((student_event["name"] == "KeyPressEvent") or (student_event["name"] == "KeyReleaseEvent")): 
-            del(student_event['time'],student_event['ip'],student_event['student'])
+        del(student_event['time'],student_event['ip'],student_event['student'])
+        if ((student_event["name"] == "KeyPressEvent") or (student_event["name"] == "KeyReleaseEvent")):
             Keyboad.append(student_event)
             count+=1
 
