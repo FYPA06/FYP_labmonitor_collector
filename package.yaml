@@ -9,8 +9,14 @@ Globals:
         BlackListProcess: iexplore.exe,MicrosoftEdgeCP.exe
         GitCommand:
           Ref: GitCommand
+        KeybroadEventStream:
+          Ref: KeybroadEventStream
+        MouseEventStream:
+          Ref: MouseEventStream
         RunUnitTest:
           Ref: RunUnitTest
+        ScreenshotMetaDataTable:
+          Ref: ScreenshotMetaDataTable
         SourceRespositoryName:
           Ref: SourceRespositoryName
         StudentLabDataBucket:
@@ -24,6 +30,9 @@ Outputs:
   ApiKey:
     Value:
       Ref: ApiKey
+  KeybroadEventStream:
+    Value:
+      Ref: KeybroadEventStream
   LabCodeCollectorApi:
     Description: API Gateway endpoint URL for Prod stage for LabCodeCollectorFunction
       function
@@ -38,11 +47,9 @@ Outputs:
       function
     Value:
       Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/event/
-  LabScreenshotCollectorApi:
-    Description: API Gateway endpoint URL for Prod stage for LabScreenshotCollectorFunction
-      function
+  MouseEventStream:
     Value:
-      Fn::Sub: https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/screenshot/
+      Ref: MouseEventStream
   S3BucketSecureURL:
     Description: Name of S3 bucket to hold website content
     Value:
@@ -55,9 +62,15 @@ Outputs:
   StudentLabDataBucket:
     Value:
       Ref: StudentLabDataBucket
+  StudentMarkingBucket:
+    Value:
+      Ref: StudentMarkingBucket
   StudentPlan:
     Value:
       Ref: StudentPlan
+  StudentScreenShotBucket:
+    Value:
+      Ref: StudentScreenShotBucket
   WebsiteURL:
     Description: URL for website hosted on S3
     Value:
@@ -86,9 +99,17 @@ Resources:
   ApiGatewayApi:
     Properties:
       DefinitionBody:
+        components:
+          securitySchemes:
+            api_key:
+              in: header
+              name: x-api-key
+              type: apiKey
         info:
           title:
             Ref: AWS::StackName
+          version: '1.0'
+        openapi: 3.0.0
         paths:
           /code:
             post:
@@ -129,21 +150,37 @@ Resources:
                 name: studentId
                 required: true
                 schema:
-                  type: integer
+                  type: string
               - description: lab number
                 in: path
                 name: lab
                 required: true
                 schema:
-                  type: integer
-              responses: {}
+                  type: string
+              responses:
+                '200':
+                  description: Default response for CORS method
+                  headers:
+                    Access-Control-Allow-Headers:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Origin:
+                      type: string
               x-amazon-apigateway-integration:
                 httpMethod: POST
+                responses:
+                  default:
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key'''
+                      method.response.header.Access-Control-Allow-Methods: '''*'''
+                      method.response.header.Access-Control-Allow-Origin: '''*'''
+                    statusCode: '200'
                 type: aws_proxy
                 uri:
-                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CheckProgessFunction.Arn}/invocations
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CheckProgressFunction.Arn}/invocations
           /screenshot:
-            post:
+            get:
               responses: {}
               security:
               - api_key: []
@@ -152,12 +189,37 @@ Resources:
                 type: aws_proxy
                 uri:
                   Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LabScreenshotCollectorFunction.Arn}/invocations
-        securityDefinitions:
-          api_key:
-            in: header
-            name: x-api-key
-            type: apiKey
-        swagger: 2.0
+          /screenshottext/{studentId}:
+            get:
+              parameters:
+              - description: Student ID
+                in: path
+                name: studentId
+                required: true
+                schema:
+                  type: string
+              responses:
+                '200':
+                  description: Default response for CORS method
+                  headers:
+                    Access-Control-Allow-Headers:
+                      type: string
+                    Access-Control-Allow-Methods:
+                      type: string
+                    Access-Control-Allow-Origin:
+                      type: string
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                responses:
+                  default:
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Headers: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key'''
+                      method.response.header.Access-Control-Allow-Methods: '''*'''
+                      method.response.header.Access-Control-Allow-Origin: '''*'''
+                    statusCode: '200'
+                type: aws_proxy
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${CheckScreenShotTextFunction.Arn}/invocations
         x-amazon-apigateway-api-key-source: HEADER
       StageName: Prod
     Type: AWS::Serverless::Api
@@ -167,7 +229,8 @@ Resources:
     Properties:
       Description: '000000000'
       Enabled: 'true'
-      Name: '000000000'
+      Name:
+        Fn::Sub: 000000000_${AWS::StackName}
       StageKeys:
       - RestApiId:
           Ref: ApiGatewayApi
@@ -178,16 +241,19 @@ Resources:
     Properties:
       Database:
         Ref: DatabaseEvents
-      Description: Student keyboard streams.
-      Name: StudentKeyboardStream
-      QueryString: 'SELECT distinct(id), array_agg(key)  FROM "studentevents"."event_stream"  WHERE
-        name=''KeyPressEvent''  GROUP BY id;
+      Description:
+        Fn::Sub: ${AWS::StackName} Student Keyboard Stream
+      Name:
+        Fn::Sub: ${AWS::StackName} Student Keyboard Stream
+      QueryString:
+        Fn::Sub: 'SELECT distinct(id), array_agg(key)  FROM "studentevents${AWS::StackName}"."event_stream"  WHERE
+          name=''KeyPressEvent''  GROUP BY id;
 
-        '
+          '
     Type: AWS::Athena::NamedQuery
-  CheckProgessFunction:
+  CheckProgressFunction:
     Properties:
-      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
       Events:
         LambdaMicroservice:
           Properties:
@@ -196,7 +262,7 @@ Resources:
             RestApiId:
               Ref: ApiGatewayApi
           Type: Api
-      Handler: check_progress.lambda_handler
+      Handler: check_progress_function.lambda_handler
       Policies:
       - Statement:
         - Action:
@@ -216,28 +282,45 @@ Resources:
           - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
         Version: '2012-10-17'
     Type: AWS::Serverless::Function
-  CheckProgessFunctionPermission:
+  CheckScreenShotTextFunction:
     Properties:
-      Action: lambda:InvokeFunction
-      FunctionName:
-        Fn::GetAtt:
-        - LabProcessCollectorFunction
-        - Arn
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
-    Type: AWS::Lambda::Permission
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
+      Events:
+        LambdaMicroservice:
+          Properties:
+            Method: GET
+            Path: /screenshottext/{studentId}
+            RestApiId:
+              Ref: ApiGatewayApi
+          Type: Api
+      Handler: check_screenshot_function.lambda_handler
+      Policies:
+      - Statement:
+        - Action:
+          - dynamodb:GetItem
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:dynamodb:*:*:table/${ScreenshotMetaDataTable}
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
   DatabaseEvents:
     Properties:
       CatalogId:
         Ref: AWS::AccountId
       DatabaseInput:
         Description: Student Event Stream
-        Name: studentevents
+        Name:
+          Fn::Sub: studentevents${AWS::StackName}
     Type: AWS::Glue::Database
+  KeybroadEventStream:
+    Properties:
+      Name: KeybroadEventStream
+      RetentionPeriodHours: 24
+      ShardCount: 1
+    Type: AWS::Kinesis::Stream
   LabCodeCollectorFunction:
     Properties:
-      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
       Events:
         LambdaMicroservice:
           Properties:
@@ -247,7 +330,9 @@ Resources:
               Ref: ApiGatewayApi
           Type: Api
       Handler: collect_code_function.lambda_handler
+      MemorySize: 2048
       Policies:
+      - AWSCodeCommitReadOnly
       - Statement:
         - Action:
           - apigateway:GET
@@ -267,20 +352,9 @@ Resources:
           - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
         Version: '2012-10-17'
     Type: AWS::Serverless::Function
-  LabCodeCollectorFunctionPermission:
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName:
-        Fn::GetAtt:
-        - LabCodeCollectorFunction
-        - Arn
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
-    Type: AWS::Lambda::Permission
   LabEventCollectorFunction:
     Properties:
-      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
       Events:
         LambdaMicroservice:
           Properties:
@@ -303,22 +377,17 @@ Resources:
           Resource:
           - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
           - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        - Action:
+          - kinesis:PutRecords
+          Effect: Allow
+          Resource:
+          - Fn::Sub: arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${KeybroadEventStream}
+          - Fn::Sub: arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${MouseEventStream}
         Version: '2012-10-17'
     Type: AWS::Serverless::Function
-  LabEventCollectorPermission:
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName:
-        Fn::GetAtt:
-        - LabEventCollectorFunction
-        - Arn
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
-    Type: AWS::Lambda::Permission
   LabProcessCollectorFunction:
     Properties:
-      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
       Events:
         LambdaMicroservice:
           Properties:
@@ -348,30 +417,24 @@ Resources:
           - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
         Version: '2012-10-17'
     Type: AWS::Serverless::Function
-  LabProcessCollectorPermission:
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName:
-        Fn::GetAtt:
-        - LabProcessCollectorFunction
-        - Arn
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
-    Type: AWS::Lambda::Permission
   LabScreenshotCollectorFunction:
     Properties:
-      CodeUri: s3://hinlabcollectorsourcebucket2/91b70818ff8d00ef81ad94b54a82d11e
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
+      Environment:
+        Variables:
+          StudentScreenShotBucket:
+            Ref: StudentScreenShotBucket
       Events:
         LambdaMicroservice:
           Properties:
-            Method: POST
+            Method: GET
             Path: /screenshot
             RestApiId:
               Ref: ApiGatewayApi
           Type: Api
       Handler: collect_screenshot_function.lambda_handler
       Policies:
+      - AWSLambdaExecute
       - Statement:
         - Action:
           - apigateway:GET
@@ -379,39 +442,60 @@ Resources:
           Resource:
             Fn::Sub: arn:aws:apigateway:${AWS::Region}::/apikeys/*
         - Action:
-          - s3:PutObject
+          - s3:*
           Effect: Allow
           Resource:
-          - Fn::Sub: arn:aws:s3:::${StudentLabDataBucket}/*
           - Fn::Sub: arn:aws:s3:::${StudentMarkingBucket}/*
+        Version: '2012-10-17'
+    Type: AWS::Serverless::Function
+  MouseEventStream:
+    Properties:
+      Name: MouseEventStream
+      RetentionPeriodHours: 24
+      ShardCount: 1
+    Type: AWS::Kinesis::Stream
+  ProcessScreenshotFunction:
+    Properties:
+      CodeUri: s3://fypassignemnt1718/54f2cdc6e737710d8817355786848cbc
+      Events:
+        ScreenshotUpload:
+          Properties:
+            Bucket:
+              Ref: StudentScreenShotBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                - Name: prefix
+                  Value: screenshot/
+                - Name: suffix
+                  Value: .jpg
+          Type: S3
+      Handler: process_screenshot_function.lambda_handler
+      Policies:
+      - AWSLambdaExecute
+      - AmazonRekognitionReadOnlyAccess
+      - Statement:
         - Action:
-          - s3:*
+          - dynamodb:PutItem
+          Effect: Allow
+          Resource:
+            Fn::Sub: arn:aws:dynamodb:*:*:table/${ScreenshotMetaDataTable}
+        - Action:
+          - s3:GetObject
           Effect: Allow
           Resource: '*'
         Version: '2012-10-17'
     Type: AWS::Serverless::Function
-  LabScreenshotCollectorPermission:
+  ScreenshotMetaDataTable:
     Properties:
-      Action: lambda:InvokeFunction
-      FunctionName:
-        Fn::GetAtt:
-        - LabScreenshotCollectorFunction
-        - Arn
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub: arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:*/*/*/*
-    Type: AWS::Lambda::Permission
+      PrimaryKey:
+        Name: id
+        Type: String
+      TableName:
+        Fn::Sub: ScreenShotMetaData${AWS::StackName}
+    Type: AWS::Serverless::SimpleTable
   StudentLabDataBucket:
-    Properties:
-      CorsConfiguration:
-        CorsRules:
-        - AllowedMethods:
-          - POST
-          - PUT
-          AllowedOrigins:
-          - '*'
-      VersioningConfiguration:
-        Status: Enabled
     Type: AWS::S3::Bucket
   StudentMarkingBucket:
     Properties:
@@ -435,8 +519,11 @@ Resources:
       Throttle:
         BurstLimit: 20
         RateLimit: 10
-      UsagePlanName: STUDENT
+      UsagePlanName:
+        Ref: AWS::StackName
     Type: AWS::ApiGateway::UsagePlan
+  StudentScreenShotBucket:
+    Type: AWS::S3::Bucket
   TableEvents:
     DependsOn: DatabaseEvents
     Properties:

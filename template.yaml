@@ -1,3 +1,22 @@
+Skip to content
+ 
+Search or jump to…
+
+Pull requests
+Issues
+Marketplace
+Explore
+ @tommy1008
+Sign out
+0
+0 0 FYPA06/FYP_labmonitor_collector
+ Code  Issues 0  Pull requests 2  Projects 0  Wiki  Insights  Settings
+FYP_labmonitor_collector/template.yaml
+517d409  an hour ago
+@tommy1008 tommy1008 CheckProgressFunction
+@HIN0815 @tommy1008
+     
+578 lines (544 sloc)  19.6 KB
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
@@ -575,3 +594,16 @@ Outputs:
     S3BucketSecureURL:
       Value: !Join ['', ['https://', !GetAtt [StudentMarkingBucket, DomainName]]]
       Description: Name of S3 bucket to hold website content
+© 2018 GitHub, Inc.
+Terms
+Privacy
+Security
+Status
+Help
+Contact GitHub
+Pricing
+API
+Training
+Blog
+About
+Press h to open a hovercard with more details.

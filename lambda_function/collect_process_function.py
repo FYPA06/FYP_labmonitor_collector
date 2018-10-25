@@ -2,7 +2,6 @@ import boto3
 import json
 import os
 import datetime
-import  requests
 
 
 print('Loading function')
@@ -23,7 +22,8 @@ def respond(err, res=None):
 def lambda_handler(event, context):
     apiKey = apigateway.get_api_key(apiKey=event["requestContext"]["identity"]["apiKeyId"],includeValue=True)
     
-    s3.put_object(Bucket=os.environ['StudentLabDataBucket'], Key="process_by_id/"+ apiKey["name"] + '/processstream.json',
+    student_id = apiKey["name"].split("_")[0]
+    s3.put_object(Bucket=os.environ['StudentLabDataBucket'], Key="process_by_id/"+ student_id + '/processstream.json',
               Body=event["body"],
               Metadata={"ip":event["requestContext"]["identity"]["sourceIp"], },
               ContentType="application/json"
@@ -42,10 +42,9 @@ def lambda_handler(event, context):
         body.append(json.dumps(student_event) )
         
     s3.put_object(Bucket=os.environ['StudentLabDataBucket'], 
-            Key = f"process_stream/{partition}/id={apiKey['name']}/{filename}",
+            Key = f"process_stream/{partition}/id={student_id}/{filename}",
             Body = '\n'.join(body).encode('utf8'),
             ContentType = "application/json"
           )
    
     return respond(None, os.environ['BlackListProcess'])
-
