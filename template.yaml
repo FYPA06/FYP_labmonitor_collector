@@ -266,7 +266,7 @@ Resources:
                   Path: /process
                   Method: POST 
 
-    CheckProgessFunction:
+    CheckProgressFunction:
       Type: AWS::Serverless::Function 
       Properties:
         CodeUri: venv/lib/python3.6/dist-packages
