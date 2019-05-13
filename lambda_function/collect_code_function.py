@@ -1,6 +1,7 @@
 import boto3
 import json
 import os
+import subprocess
 import tarfile,sys,shutil
 
 print('Loading function')
@@ -16,7 +17,8 @@ def lambda_handler(event, context):
     
     body = json.loads(event["body"])
     key = get_key(body)
-    s3.put_object(Bucket=os.environ['StudentLabDataBucket'], Key="code/"+ apiKey["name"] + key,
+    student_id = apiKey["name"].split("_")[0]
+    s3.put_object(Bucket=os.environ['StudentLabDataBucket'], Key="code/"+ student_id + key,
                   Body=body["code"],
                   Metadata={"ip":event["requestContext"]["identity"]["sourceIp"], },
                   ContentType="application/json"
@@ -30,19 +32,19 @@ def lambda_handler(event, context):
     setup_git()
     clone_source()
     overwrite_source_code(body)
-    test_result = run_unit_test(body, dirpath)
+    test_result = run_unit_test(body)
     print(test_result)
-    print(test_result.splitlines()[-1])
-    is_pass_all_tests = "failed" not in test_result.splitlines()[-1] #Last line.
+    print(test_result.splitlines())
+    is_pass_all_tests = "FAILED" not in test_result
  
-    s3.put_object(Bucket=os.environ['StudentLabDataBucket'], Key="test_result/"+ apiKey["name"] + key,
+    s3.put_object(Bucket=os.environ['StudentLabDataBucket'], Key="test_result/"+ student_id + key,
                   Body=test_result,
                   Metadata={"ip":event["requestContext"]["identity"]["sourceIp"], },
                   ContentType="text/plain"
             )
             
     if is_pass_all_tests:
-        s3.put_object(Bucket=os.environ['StudentMarkingBucket'], Key=""+ apiKey["name"] + key,
+        s3.put_object(Bucket=os.environ['StudentMarkingBucket'], Key=""+ student_id + key,
               Body=test_result,
               Metadata={"ip":event["requestContext"]["identity"]["sourceIp"], },
               ACL='public-read',
@@ -99,23 +101,23 @@ def setup_git():
     
 def clone_source():
     os.chdir("/tmp/")
-    if os.path.isdir("/tmp/{SOURCE_RESPOSITORY_NAME}"):
-        shutil.rmtree("/tmp/{SOURCE_RESPOSITORY_NAME}")
+    if os.path.isdir(f"/tmp/{SOURCE_RESPOSITORY_NAME}"):
+        shutil.rmtree(f"/tmp/{SOURCE_RESPOSITORY_NAME}")
     os.system(os.environ['GitCommand'])
     
     
 def overwrite_source_code(body):
-    code_file_path = "/tmp/{SOURCE_RESPOSITORY_NAME}/lab/" + get_key(body)
+    code_file_path = f"/tmp/{SOURCE_RESPOSITORY_NAME}/lab/" + get_key(body)
     os.remove(code_file_path)
     with open(code_file_path, "w+") as codefile:
         codefile.write(body["code"])
-    os.system("cat " + code_file_path)
-    
-def run_unit_test(body, dirpath):
+
+def run_unit_test(body):
     segment = get_key(body).split("/")
     os.environ['PATH'] = os.environ['PATH'] + ":" +  os.environ['LAMBDA_RUNTIME_DIR']
-    os.chdir(dirpath)
-    return os.popen('python pytest.py /tmp/{SOURCE_RESPOSITORY_NAME}/tests/' + segment[1] + "/test_"+ segment[2]).read()
+    os.chdir(f"/tmp/{SOURCE_RESPOSITORY_NAME}")
+    print(f'python -m unittest tests/' + segment[1] + "/test_"+ segment[2])
+    return subprocess.getoutput(f'python -m unittest tests/' + segment[1] + "/test_"+ segment[2])
             
             
 def respond(err, res=None):
